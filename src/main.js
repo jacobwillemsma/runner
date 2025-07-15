@@ -110,10 +110,6 @@ class Runner {
         click: () => this.reloadFunctions()
       },
       {
-        label: 'Settings',
-        click: () => this.openSettings()
-      },
-      {
         label: 'Quit',
         click: () => {
           this.shutdown();
@@ -146,11 +142,6 @@ class Runner {
     }
   }
 
-  openSettings() {
-    console.log('Opening settings...');
-    // TODO: Implement settings window
-    this.notificationManager.showInfo('Settings', 'Settings window not implemented yet');
-  }
 
   shutdown() {
     console.log('Shutting down Runner...');

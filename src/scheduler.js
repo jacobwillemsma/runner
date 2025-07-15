@@ -23,7 +23,7 @@ class Scheduler {
   stop() {
     console.log('Stopping scheduler...');
     this.scheduledTasks.forEach(task => {
-      task.destroy();
+      task.stop();
     });
     this.scheduledTasks.clear();
   }
