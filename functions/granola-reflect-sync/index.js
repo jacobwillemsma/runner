@@ -4,6 +4,159 @@ const GranolaClient = require('../../shared/clients/granola');
 const ReflectClient = require('../../shared/clients/reflect');
 const logger = require('../../shared/logger');
 
+// Constants
+const CONSTANTS = {
+  RATE_LIMIT_DELAY: 500,
+  DEFAULT_START_DATE: '2025-07-15T00:00:00.000Z',
+  TRACKING_FILE_NAME: 'granola-sync-tracking.json'
+};
+
+const DEFAULT_TRACKING_DATA = {
+  processedDocuments: [],
+  startDate: CONSTANTS.DEFAULT_START_DATE,
+  lastSync: null,
+  totalProcessed: 0,
+  lastError: null
+};
+
+/**
+ * Loads tracking data from file or returns default data
+ * @param {string} trackingFilePath - Path to tracking file
+ * @returns {Object} Tracking data object
+ */
+function loadTrackingData(trackingFilePath) {
+  try {
+    if (!fs.existsSync(trackingFilePath)) {
+      return { ...DEFAULT_TRACKING_DATA };
+    }
+
+    const trackingContent = fs.readFileSync(trackingFilePath, 'utf8');
+    const loadedData = JSON.parse(trackingContent);
+    
+    // Merge with defaults to ensure all properties exist
+    return { ...DEFAULT_TRACKING_DATA, ...loadedData };
+  } catch (error) {
+    logger.error('Error loading tracking data:', error);
+    return { ...DEFAULT_TRACKING_DATA };
+  }
+}
+
+/**
+ * Saves tracking data to file
+ * @param {string} trackingFilePath - Path to tracking file
+ * @param {Object} trackingData - Data to save
+ * @returns {boolean} Success status
+ */
+function saveTrackingData(trackingFilePath, trackingData) {
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(trackingFilePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(trackingFilePath, JSON.stringify(trackingData, null, 2));
+    return true;
+  } catch (error) {
+    logger.error('Error saving tracking data:', error);
+    return false;
+  }
+}
+
+/**
+ * Processes a single document and creates a note in Reflect
+ * @param {Object} doc - Document to process
+ * @param {ReflectClient} reflectClient - Reflect client instance
+ * @returns {Promise<boolean>} Success status
+ */
+async function processDocument(doc, reflectClient) {
+  try {
+    console.log(`Processing: ${doc.title}`);
+    
+    await reflectClient.createNoteFromGranola(doc);
+    
+    console.log(`✓ Created note in Reflect: ${doc.title}`);
+    
+    // Small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, CONSTANTS.RATE_LIMIT_DELAY));
+    
+    return true;
+  } catch (error) {
+    console.error(`✗ Error processing ${doc.title}:`, error.message);
+    logger.error(`Error processing Granola document ${doc.id}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Processes all new documents
+ * @param {Array} newDocuments - Array of documents to process
+ * @param {ReflectClient} reflectClient - Reflect client instance
+ * @param {Object} trackingData - Current tracking data
+ * @returns {Promise<Object>} Processing results
+ */
+async function processDocuments(newDocuments, reflectClient, trackingData) {
+  let processedCount = 0;
+  let errorCount = 0;
+  
+  for (const doc of newDocuments) {
+    const success = await processDocument(doc, reflectClient);
+    
+    if (success) {
+      trackingData.processedDocuments.push(doc.id);
+      processedCount++;
+    } else {
+      errorCount++;
+    }
+  }
+  
+  return { processedCount, errorCount };
+}
+
+/**
+ * Updates tracking data with error information
+ * @param {string} trackingFilePath - Path to tracking file
+ * @param {string} errorMessage - Error message
+ */
+function updateTrackingWithError(trackingFilePath, errorMessage) {
+  try {
+    if (fs.existsSync(trackingFilePath)) {
+      const trackingData = loadTrackingData(trackingFilePath);
+      trackingData.lastError = errorMessage;
+      trackingData.lastSync = new Date().toISOString();
+      saveTrackingData(trackingFilePath, trackingData);
+    }
+  } catch (trackingError) {
+    logger.error('Failed to update tracking file:', trackingError);
+  }
+}
+
+/**
+ * Logs sync status information
+ * @param {Object} trackingData - Current tracking data
+ */
+function logSyncStatus(trackingData) {
+  console.log(`Last sync: ${trackingData.lastSync ? new Date(trackingData.lastSync).toLocaleString() : 'Never'}`);
+  console.log(`Total processed: ${trackingData.totalProcessed}`);
+}
+
+/**
+ * Logs sync results
+ * @param {number} processedCount - Number of documents processed
+ * @param {number} errorCount - Number of errors encountered
+ */
+function logSyncResults(processedCount, errorCount) {
+  console.log(`Sync completed: ${processedCount} notes created, ${errorCount} errors`);
+  
+  if (processedCount > 0) {
+    console.log(`Successfully synced ${processedCount} Granola notes to Reflect!`);
+  }
+  
+  if (errorCount > 0) {
+    console.log(`Warning: ${errorCount} documents failed to process`);
+  }
+}
+
 module.exports = {
   name: "Sync Granola to Reflect",
   description: "Take Granola Notes to Reflect",
@@ -11,25 +164,12 @@ module.exports = {
   execute: async () => {
     console.log("Starting Granola to Reflect sync...");
     
-    const trackingFilePath = path.join(__dirname, '../../data/granola-sync-tracking.json');
+    const trackingFilePath = path.join(__dirname, '../../data', CONSTANTS.TRACKING_FILE_NAME);
     
     try {
       // Load tracking data
-      let trackingData = {
-        processedDocuments: [],
-        startDate: "2025-07-15T00:00:00.000Z",
-        lastSync: null,
-        totalProcessed: 0,
-        lastError: null
-      };
-      
-      if (fs.existsSync(trackingFilePath)) {
-        const trackingContent = fs.readFileSync(trackingFilePath, 'utf8');
-        trackingData = { ...trackingData, ...JSON.parse(trackingContent) };
-      }
-      
-      console.log(`Last sync: ${trackingData.lastSync ? new Date(trackingData.lastSync).toLocaleString() : 'Never'}`);
-      console.log(`Total processed: ${trackingData.totalProcessed}`);
+      let trackingData = loadTrackingData(trackingFilePath);
+      logSyncStatus(trackingData);
       
       // Initialize clients
       const granolaClient = new GranolaClient();
@@ -45,51 +185,19 @@ module.exports = {
       console.log(`Found ${granolaDocuments.length} documents from Granola`);
       
       // Filter out already processed documents
-      const newDocuments = granolaDocuments.filter(doc => 
-        !trackingData.processedDocuments.includes(doc.id)
-      );
-      
+      const newDocuments = granolaDocuments.filter(doc => !trackingData.processedDocuments.includes(doc.id));
       console.log(`${newDocuments.length} new documents to process`);
       
       if (newDocuments.length === 0) {
         console.log("No new documents to sync");
         trackingData.lastSync = new Date().toISOString();
         trackingData.lastError = null;
-        
-        // Save tracking data
-        fs.writeFileSync(trackingFilePath, JSON.stringify(trackingData, null, 2));
+        saveTrackingData(trackingFilePath, trackingData);
         return;
       }
       
-      // Process each new document
-      let processedCount = 0;
-      let errorCount = 0;
-      
-      for (const doc of newDocuments) {
-        try {
-          console.log(`Processing: ${doc.title}`);
-          
-          // Create note in Reflect
-          const reflectNote = await reflectClient.createNoteFromGranola(doc);
-          
-          // Mark as processed
-          trackingData.processedDocuments.push(doc.id);
-          processedCount++;
-          
-          console.log(`✓ Created note in Reflect: ${doc.title}`);
-          
-          // Small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-        } catch (error) {
-          errorCount++;
-          console.error(`✗ Error processing ${doc.title}:`, error.message);
-          logger.error(`Error processing Granola document ${doc.id}:`, error);
-          
-          // Continue with other documents even if one fails
-          continue;
-        }
-      }
+      // Process all new documents
+      const { processedCount, errorCount } = await processDocuments(newDocuments, reflectClient, trackingData);
       
       // Update tracking data
       trackingData.totalProcessed += processedCount;
@@ -97,35 +205,17 @@ module.exports = {
       trackingData.lastError = errorCount > 0 ? `${errorCount} documents failed to process` : null;
       
       // Save tracking data
-      fs.writeFileSync(trackingFilePath, JSON.stringify(trackingData, null, 2));
+      saveTrackingData(trackingFilePath, trackingData);
       
-      // Summary
-      console.log(`Sync completed: ${processedCount} notes created, ${errorCount} errors`);
-      
-      if (processedCount > 0) {
-        console.log(`Successfully synced ${processedCount} Granola notes to Reflect!`);
-      }
-      
-      if (errorCount > 0) {
-        console.log(`Warning: ${errorCount} documents failed to process`);
-      }
+      // Log results
+      logSyncResults(processedCount, errorCount);
       
     } catch (error) {
       console.error("Sync failed:", error.message);
       logger.error("Granola to Reflect sync failed:", error);
       
       // Update tracking with error
-      try {
-        if (fs.existsSync(trackingFilePath)) {
-          const trackingContent = fs.readFileSync(trackingFilePath, 'utf8');
-          const trackingData = JSON.parse(trackingContent);
-          trackingData.lastError = error.message;
-          trackingData.lastSync = new Date().toISOString();
-          fs.writeFileSync(trackingFilePath, JSON.stringify(trackingData, null, 2));
-        }
-      } catch (trackingError) {
-        logger.error("Failed to update tracking file:", trackingError);
-      }
+      updateTrackingWithError(trackingFilePath, error.message);
       
       throw error;
     }
