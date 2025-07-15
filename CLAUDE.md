@@ -39,14 +39,8 @@ Functions are organized in the `functions/` directory as self-contained modules:
 
 ```
 functions/
-├── meeting-sync/
-│   ├── index.js           # Main function definition
-│   ├── clients/
-│   │   ├── notion.js      # Notion API client
-│   │   └── slack.js       # Slack API client
-│   └── utils/             # Function-specific utilities
-└── example-simple/
-    └── index.js           # Simple example function
+├── granola-reflect-sync/
+│   └── index.js           # Main function definition
 ```
 
 ### Shared Utilities
@@ -109,21 +103,22 @@ module.exports = {
 ### Example Function
 
 ```javascript
-// functions/meeting-sync/index.js
-const NotionClient = require('./clients/notion');
-const SlackClient = require('./clients/slack');
+// functions/granola-reflect-sync/index.js
+const GranolaClient = require('../../shared/clients/granola');
+const ReflectClient = require('../../shared/clients/reflect');
 
 module.exports = {
-  name: "Sync Meeting Notes",
-  description: "Syncs meeting notes from Notion to Slack",
+  name: "Sync Granola to Reflect",
+  description: "Take Granola Notes to Reflect",
   schedule: "0 9 * * *", // Daily at 9 AM
   execute: async () => {
-    const notion = new NotionClient();
-    const slack = new SlackClient();
+    const granola = new GranolaClient();
+    const reflect = new ReflectClient();
     
-    const notes = await notion.getMeetingNotes();
-    const formatted = await slack.formatMeetingNote(notes);
-    await slack.postToChannel('#general', formatted);
+    const documents = await granola.getMeetingDocuments();
+    for (const doc of documents) {
+      await reflect.createNoteFromGranola(doc);
+    }
   }
 };
 ```
@@ -168,14 +163,17 @@ runner/
 │   ├── scheduler.js
 │   └── notifications.js
 ├── functions/           # Plugin functions
-│   ├── meeting-sync/
-│   └── example-simple/
+│   └── granola-reflect-sync/
 ├── shared/             # Shared utilities
 │   ├── http-utils.js
 │   ├── config-manager.js
-│   └── logger.js
+│   ├── logger.js
+│   └── clients/        # API clients
+│       ├── granola.js
+│       └── reflect.js
 ├── data/               # Runtime data
-│   └── history.json
+│   ├── history.json
+│   └── granola-sync-tracking.json
 └── assets/             # Icons and resources
 ```
 

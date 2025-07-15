@@ -1,6 +1,9 @@
 const { app, Menu, Tray } = require('electron');
 const path = require('path');
 
+// Load environment variables from .env file
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const FunctionLoader = require('./function-loader');
 const HistoryManager = require('./history');
 const NotificationManager = require('./notifications');

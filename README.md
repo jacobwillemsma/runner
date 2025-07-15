@@ -59,17 +59,22 @@ module.exports = {
 ### Example Function
 
 ```javascript
-// functions/meeting-sync/index.js
-const notionClient = require('./clients/notion');
-const slackClient = require('./clients/slack');
+// functions/granola-reflect-sync/index.js
+const GranolaClient = require('../../shared/clients/granola');
+const ReflectClient = require('../../shared/clients/reflect');
 
 module.exports = {
-  name: "Sync Meeting Notes",
-  description: "Syncs meeting notes from Notion to Slack",
+  name: "Sync Granola to Reflect",
+  description: "Take Granola Notes to Reflect",
   schedule: "0 9 * * *", // Daily at 9 AM
   execute: async () => {
-    const notes = await notionClient.getMeetingNotes();
-    await slackClient.postToChannel(notes);
+    const granola = new GranolaClient();
+    const reflect = new ReflectClient();
+    
+    const documents = await granola.getMeetingDocuments();
+    for (const doc of documents) {
+      await reflect.createNoteFromGranola(doc);
+    }
   }
 };
 ```
