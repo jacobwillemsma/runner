@@ -1,5 +1,6 @@
 const https = require('https');
 const http = require('http');
+const zlib = require('zlib');
 
 /**
  * HTTP utility functions for making requests
@@ -24,18 +25,29 @@ class HttpUtils {
         headers: {
           'User-Agent': 'Runner/1.0',
           'Content-Type': 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
           ...options.headers
         }
       };
 
       const req = requestModule.request(requestOptions, (res) => {
+        // Handle compressed responses
+        let responseStream = res;
+        const encoding = res.headers['content-encoding'];
+        
+        if (encoding === 'gzip') {
+          responseStream = res.pipe(zlib.createGunzip());
+        } else if (encoding === 'deflate') {
+          responseStream = res.pipe(zlib.createInflate());
+        }
+        
         let data = '';
         
-        res.on('data', (chunk) => {
+        responseStream.on('data', (chunk) => {
           data += chunk;
         });
 
-        res.on('end', () => {
+        responseStream.on('end', () => {
           try {
             const result = {
               statusCode: res.statusCode,
@@ -57,6 +69,10 @@ class HttpUtils {
           } catch (error) {
             reject(error);
           }
+        });
+        
+        responseStream.on('error', (error) => {
+          reject(error);
         });
       });
 
