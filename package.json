@@ -38,7 +38,8 @@
       "functions/**/*",
       "shared/**/*",
       "data/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      ".env"
     ],
     "mac": {
       "icon": "assets/icon.icns",
