@@ -1,5 +1,5 @@
-const NotionClient = require('./clients/notion');
-const SlackClient = require('./clients/slack');
+const NotionClient = require('../../shared/clients/notion');
+const SlackClient = require('../../shared/clients/slack');
 
 module.exports = {
   name: "Sync Meeting Notes",
